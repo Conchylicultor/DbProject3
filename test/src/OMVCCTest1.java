@@ -29,6 +29,8 @@ public class OMVCCTest1 {
 			long t4 = OMVCC.begin();
 			assert OMVCC.read(t4, 1) == 52;
 			assert OMVCC.read(t4, 2) == 17;
+			System.out.println(OMVCC.read(t4, 1));
+			System.out.println(OMVCC.read(t4, 2));
 			OMVCC.commit(t4);
 
 			System.out.println("Success in OMVCCTest1!");
