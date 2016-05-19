@@ -85,16 +85,19 @@ public class OMVCC {
 	// Values committed
 	static private HashMap<Integer, Integer> values = new HashMap<>();
 	// Current transactions
-	static private List<Transaction> listTransaction = new ArrayList<>();
+	static private LinkedList<Transaction> listTransaction = new LinkedList<>();
 
 	// Contain a transaction
-	private class Transaction {
-		public int transactionId;
-
+	private static class Transaction {
+		public long startTimestamp;
+		public long transactionId;
+		public boolean isReadOnly;
+		
 		public List<Pair<Integer, Integer> > modifications;
 		public List< Integer > listValuesRead;
 
 		public Transaction() {
+			isReadOnly = true;
 			modifications = new ArrayList<Pair<Integer,Integer>>();
 			listValuesRead = new ArrayList<Integer>();
 			// transaction id
@@ -102,28 +105,55 @@ public class OMVCC {
 		}
 	}
 
-	static void checkTransactionExist(long xact) throws Exception {
+	static Transaction checkTransactionExist(long xact) throws Exception {
 		boolean found = false;
 		for (Transaction iter : listTransaction) {
 			if (iter.transactionId == xact) {
 				found = true;
+				return iter;
 			}
 		}
 		
 		if(!found) {
 			throw new Exception("Transaction doesn't exist or is terminated");
 		}
+		return null;
 	}
 
 	// returns transaction id == logical start timestamp
 	public static long begin() {
+		System.out.println(startAndCommitTimestampGen);
+		System.out.println(transactionIdGen);
+		
+		// Creation of a new transaction with id > all other transactions
+		Transaction newTransaction = new Transaction();
+		
+		newTransaction.startTimestamp = startAndCommitTimestampGen;
+		
+		// Compute an unused id (last timestamp or last id+1)
+		long numberId = startAndCommitTimestampGen;
+		if (!listTransaction.isEmpty()) { // Some uncommitted changes
+			long lastId = listTransaction.getLast().transactionId + 1; // Because the transactions are added in the chronological order (so the last added is the last created)
+			if (numberId < lastId) { // In this case, we take the max value between the last committed value and
+				numberId = lastId;
+			}
+		}
+		newTransaction.transactionId = numberId;
+		
+		listTransaction.add(newTransaction);
+		
 		++startAndCommitTimestampGen; //SHOULD BE USED
-		return ++transactionIdGen;
+		++transactionIdGen;
+		return newTransaction.transactionId;
 	}
 
 	// return value of object key in transaction xact
 	public static int read(long xact, int key) throws Exception {
-		checkTransactionExist(xact);
+		Transaction currentTrans = checkTransactionExist(xact);
+		
+		// Check the key exist !! (in the committed version)
+		// Get the last written version of the current transaction (or the past version)
+		
 		/* TODO */
 		return 0; // FIX THIS
 	}
@@ -131,7 +161,11 @@ public class OMVCC {
 	// return the list of values of objects whose values mod k are zero.
 	// this is our only kind of query / bulk read.
 	public static List<Integer> modquery(long xact, int k) throws Exception {
-		checkTransactionExist(xact);
+		Transaction currentTrans = checkTransactionExist(xact);
+		if(k == 0) {
+			throw new Exception("Error: modquery by 0");
+		}
+		
 		List<Integer> l = new ArrayList<Integer>();
 		/* TODO */
 		return l;
@@ -140,7 +174,8 @@ public class OMVCC {
 	// update the value of an existing object identified by key
 	// or insert <key,value> for a non-existing key in transaction xact
 	public static void write(long xact, int key, int value) throws Exception {
-		checkTransactionExist(xact);
+		Transaction currentTrans = checkTransactionExist(xact);
+		currentTrans.isReadOnly = false; // At least one write operation
 		/* TODO */
 	}
 
@@ -151,9 +186,18 @@ public class OMVCC {
 	}
 
 	public static void commit(long xact)   throws Exception {
-		checkTransactionExist(xact);
+		Transaction currentTrans = checkTransactionExist(xact);
 		boolean isValid = false; // FIX THIS
 		/* TODO */
+		
+		// Validation phase
+		if(currentTrans.isReadOnly) {
+			isValid = true;
+		} else {
+			// Validation more in depth
+		}
+		
+		
 		if(isValid) {
 			++startAndCommitTimestampGen; //SHOULD BE USED
 		}
