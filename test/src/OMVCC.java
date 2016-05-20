@@ -87,6 +87,13 @@ public class OMVCC {
 	// Current transactions
 	static private LinkedList<Transaction> listTransaction = new LinkedList<>();
 
+	// Rollback the transaction
+	static void cancelAndThrow(Transaction trans, String message) throws Exception {
+		// rollback(trans.transactionId); Useless ??? Because we remove the transaction just after
+		listTransaction.remove(trans); // We remove the erroneous transaction
+		throw new Exception(message);
+	}
+	
 	// Contain a transaction
 	private static class Transaction {
 		public long startTimestamp;
@@ -114,9 +121,10 @@ public class OMVCC {
 				return valuesModified.get(key).getLast(); // Last written value
 			}
 			else if(values.containsKey(key)) { // Otherwise, we get the last 
-				return values.get(key).getLast(this.startTimestamp);
+				return values.get(key).getLast(this, this.startTimestamp);
 			} else { // The key does not exist
-				throw new Exception("Error: Trying to read an non initialized value");
+				cancelAndThrow(this, "Error: Trying to read an non initialized value");
+				return 0; // Never reached (Exception throw on the previous line)
 			}
 		}
 	}
@@ -133,7 +141,7 @@ public class OMVCC {
 			return modifHist.getLast().second; // Return the last value
 		}
 		
-		public int getLast(long startTimestamp) throws Exception {
+		public int getLast(Transaction trans, long startTimestamp) throws Exception {
 			
 			boolean found = false;
 			int returnValue = 0;
@@ -144,14 +152,19 @@ public class OMVCC {
 				}
 			}
 			
-			if(!found)
-				throw new Exception("Error: The value you're trying to read has been initialized after the start timestamp");
+			if(!found) {
+				cancelAndThrow(trans, "Error: The value you're trying to read has been initialized after the start timestamp");
+			}
 			
 			return returnValue;
 		}
 
 		void addValue(long timestamp, int newValue) {
 			modifHist.add(new Pair<Long, Integer>(timestamp, newValue));
+		}
+
+		public long getLastTimestamp() {
+			return modifHist.getLast().first; // Return the last timestamp
 		}
 	}
 
@@ -195,7 +208,7 @@ public class OMVCC {
 		
 		// Check the key exist !! (in the committed version)
 		// Get the last written version of the current transaction (or the past version)
-		return currentTrans.read(key); // FIX THIS
+		return currentTrans.read(key);
 	}
 
 	// return the list of values of objects whose values mod k are zero.
@@ -203,7 +216,7 @@ public class OMVCC {
 	public static List<Integer> modquery(long xact, int k) throws Exception {
 		Transaction currentTrans = checkTransactionExist(xact);
 		if(k == 0) {
-			throw new Exception("Error: modquery by 0");
+			cancelAndThrow(currentTrans, "Error: modquery by 0");
 		}
 		
 		List<Integer> l = new ArrayList<Integer>();
@@ -217,21 +230,44 @@ public class OMVCC {
 		Transaction currentTrans = checkTransactionExist(xact);
 		currentTrans.isReadOnly = false; // At least one write operation
 		
-		// TODO: Check that we have the right to write (How ????)
+		// Check that we have the right to write
 		
-		// If we have the right, then we update the value
-		
-		// If the key is new, we create a new value
-		if (!currentTrans.valuesModified.containsKey(key)) {
-			currentTrans.valuesModified.put(key, new Value());
+		boolean isValid = true;
+		String writingError = "";
+		// Throw an exception and abort if:
+		// 1) There exist another uncommitted version of the key
+		for (Transaction iterTrans : listTransaction) {
+			if(iterTrans.transactionId != currentTrans.transactionId) { // We check both are different
+				if(iterTrans.valuesModified.containsKey(key)) { // The key exist in another transaction
+					isValid = false;
+					writingError = "uncommited version";
+				}
+			}
+		}
+		// 2) There exist a more recent committed version of the key
+		if (values.containsKey(key)) {
+			if (values.get(key).getLastTimestamp() > currentTrans.startTimestamp) { // Someone did commit a newer version
+				isValid = false;
+				writingError = "more recent committed version";
+			}
 		}
 		
-		// We update the value
-		currentTrans.valuesModified.get(key).addValue( // On the right key
-				0, // We don't care (Right ????)
-				value // The last value we have written
-			);
-		/* TODO */
+		if(isValid) {
+			// If we have the right, then we update the value
+			
+			// If the key is new, we create a new value
+			if (!currentTrans.valuesModified.containsKey(key)) {
+				currentTrans.valuesModified.put(key, new Value());
+			}
+			
+			// We update the value
+			currentTrans.valuesModified.get(key).addValue( // On the right key
+					0, // We don't care (Right ????)
+					value // The last value we have written
+				);
+		} else { // Otherwise: cancel !!!
+			cancelAndThrow(currentTrans, "Error: Cannot write the key (" + writingError + ")");
+		}
 	}
 
 	// delete the object identified by key in transaction xact
@@ -275,6 +311,7 @@ public class OMVCC {
 		
 		
 		if(isValid) {
+			listTransaction.remove(currentTrans); // The transaction is closed!!
 			++startAndCommitTimestampGen; //SHOULD BE USED
 		}
 	}
