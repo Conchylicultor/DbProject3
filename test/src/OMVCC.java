@@ -25,7 +25,7 @@ public class OMVCC {
 	/* TODO -- your versioned key-value store data structure */
 
 
-	public class Pair<A, B> {
+	public static class Pair<A, B> {
 		private A first;
 		private B second;
 
@@ -83,7 +83,7 @@ public class OMVCC {
 	private static long transactionIdGen = 1L << 62;
 
 	// Values committed
-	static private HashMap<Integer, Integer> values = new HashMap<>();
+	static private HashMap<Integer, Value> values = new HashMap<>();
 	// Current transactions
 	static private LinkedList<Transaction> listTransaction = new LinkedList<>();
 
@@ -93,15 +93,65 @@ public class OMVCC {
 		public long transactionId;
 		public boolean isReadOnly;
 		
-		public List<Pair<Integer, Integer> > modifications;
-		public List< Integer > listValuesRead;
+		//public List<Pair<Integer, Integer> > modifications;
+		//public List< Integer > listValuesRead;
+		
+		public HashMap<Integer, Value> valuesModified = new HashMap<>();
 
 		public Transaction() {
 			isReadOnly = true;
-			modifications = new ArrayList<Pair<Integer,Integer>>();
-			listValuesRead = new ArrayList<Integer>();
+			//modifications = new ArrayList<Pair<Integer,Integer>>();
+			//listValuesRead = new ArrayList<Integer>();
 			// transaction id
 			// Undo buffer
+		}
+
+		public int read(int key) throws Exception {
+			// Return the last version of the database (if that one is not updated)
+			
+			// If we did modify the value
+			if(valuesModified.containsKey(key)) {
+				return valuesModified.get(key).getLast(); // Last written value
+			}
+			else if(values.containsKey(key)) { // Otherwise, we get the last 
+				return values.get(key).getLast(this.startTimestamp);
+			} else { // The key does not exist
+				throw new Exception("Error: Trying to read an non initialized value");
+			}
+		}
+	}
+	
+	// Contain a transaction
+	private static class Value {
+		public LinkedList<Pair<Long, Integer> > modifHist;
+
+		public Value() {
+			modifHist = new LinkedList<>();
+		}
+		
+		public int getLast() { // Should be called only on the transaction value if we are sure that it has been modified
+			return modifHist.getLast().second; // Return the last value
+		}
+		
+		public int getLast(long startTimestamp) throws Exception {
+			
+			boolean found = false;
+			int returnValue = 0;
+			for (Pair<Long, Integer> 	iter : modifHist) {
+				if(iter.first < startTimestamp) { // It exist a more recent value
+					found = true;
+					returnValue = iter.second;
+				}
+			}
+			
+			if(!found)
+				throw new Exception("Error: The value you're trying to read has been initialized after the start timestamp");
+			
+			return returnValue;
+		}
+
+		void addValue(long timestamp, int newValue) {
+			modifHist.add(new Pair<Long, Integer>(timestamp, newValue));
 		}
 	}
 
@@ -122,28 +172,20 @@ public class OMVCC {
 
 	// returns transaction id == logical start timestamp
 	public static long begin() {
-		System.out.println(startAndCommitTimestampGen);
-		System.out.println(transactionIdGen);
+		//System.out.println(startAndCommitTimestampGen);
+		//System.out.println(transactionIdGen);
 		
 		// Creation of a new transaction with id > all other transactions
 		Transaction newTransaction = new Transaction();
 		
 		newTransaction.startTimestamp = startAndCommitTimestampGen;
-		
-		// Compute an unused id (last timestamp or last id+1)
-		long numberId = startAndCommitTimestampGen;
-		if (!listTransaction.isEmpty()) { // Some uncommitted changes
-			long lastId = listTransaction.getLast().transactionId + 1; // Because the transactions are added in the chronological order (so the last added is the last created)
-			if (numberId < lastId) { // In this case, we take the max value between the last committed value and
-				numberId = lastId;
-			}
-		}
-		newTransaction.transactionId = numberId;
+		newTransaction.transactionId = transactionIdGen;
 		
 		listTransaction.add(newTransaction);
 		
 		++startAndCommitTimestampGen; //SHOULD BE USED
 		++transactionIdGen;
+		
 		return newTransaction.transactionId;
 	}
 
@@ -153,9 +195,7 @@ public class OMVCC {
 		
 		// Check the key exist !! (in the committed version)
 		// Get the last written version of the current transaction (or the past version)
-		
-		/* TODO */
-		return 0; // FIX THIS
+		return currentTrans.read(key); // FIX THIS
 	}
 
 	// return the list of values of objects whose values mod k are zero.
@@ -176,6 +216,21 @@ public class OMVCC {
 	public static void write(long xact, int key, int value) throws Exception {
 		Transaction currentTrans = checkTransactionExist(xact);
 		currentTrans.isReadOnly = false; // At least one write operation
+		
+		// TODO: Check that we have the right to write (How ????)
+		
+		// If we have the right, then we update the value
+		
+		// If the key is new, we create a new value
+		if (!currentTrans.valuesModified.containsKey(key)) {
+			currentTrans.valuesModified.put(key, new Value());
+		}
+		
+		// We update the value
+		currentTrans.valuesModified.get(key).addValue( // On the right key
+				0, // We don't care (Right ????)
+				value // The last value we have written
+			);
 		/* TODO */
 	}
 
@@ -195,6 +250,27 @@ public class OMVCC {
 			isValid = true;
 		} else {
 			// Validation more in depth
+			
+			// TODO: Check correctness
+			
+			System.out.println("Commiting...");
+			// If everything is ok, then we commit
+			for (Map.Entry<Integer, Value> entry : currentTrans.valuesModified.entrySet()) {
+				System.out.println("Update value " + entry.getKey());
+				// If the key is new, we create a new value
+				if (!values.containsKey(entry.getKey())) {
+					values.put(entry.getKey(), new Value());
+				}
+				
+				// We update the value
+				values.get(entry.getKey()).addValue( // On the right key
+						startAndCommitTimestampGen, // We update at the next timestamp
+						entry.getValue().getLast() // The last value we have written
+					);
+				System.out.println("New value: " + values.get(entry.getKey()).getLast());
+			}
+			
+			isValid = true;
 		}
 		
 		
