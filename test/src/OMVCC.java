@@ -219,8 +219,24 @@ public class OMVCC {
 			cancelAndThrow(currentTrans, "Error: modquery by 0");
 		}
 		
+		// For each value
+		
 		List<Integer> l = new ArrayList<Integer>();
-		/* TODO */
+		
+		System.out.println("Get all dividers");
+		HashMap<Integer, Value> mergedMap = new HashMap();
+		mergedMap.putAll(values);
+		mergedMap.putAll(currentTrans.valuesModified); // Will replace all previous values modified
+		for (Map.Entry<Integer, Value> iter : mergedMap.entrySet()) {
+			// We get the most recent one
+			int value = iter.getValue().getLast();
+			if(value % k == 0)
+			{
+				System.out.println("Add " + iter.getKey() + " : " + value);
+				l.add(value);
+			}
+		}
+
 		return l;
 	}
 

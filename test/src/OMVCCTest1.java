@@ -14,6 +14,23 @@ public class OMVCCTest1 {
 			 T2:        R(1) W(1)           R(1) W(1) C
 			 T3:                  R(1) W(1)             C
 			*/
+			
+
+			long p0 = OMVCC.begin();
+			OMVCC.write(p0, 1, 4);
+			OMVCC.write(p0, 2, 6);
+			OMVCC.write(p0, 3, 3);
+			OMVCC.commit(p0);
+			long p1 = OMVCC.begin();
+			OMVCC.modquery(p1, 2);
+			OMVCC.write(p1, 1, 6);
+			OMVCC.write(p1, 2, 3);
+			OMVCC.write(p1, 3, 4);
+			OMVCC.modquery(p1, 2);
+			OMVCC.commit(p1);
+			
+			
+			
 			long t1 = OMVCC.begin();
 			OMVCC.write(t1, 1, 13); // create obj1 and initialize with 13
 			OMVCC.commit(t1);

@@ -20,7 +20,7 @@ public class OMVCCTest2 {
 		// # of test to execute
 		// For automatic validation, it is not possible to execute all tests at once
 		// You can get the TEST# from args and execute all tests using a shell-script
-		int TEST = 1;
+		int TEST = 3;
 		if(args.length > 0) {
 			TEST = Integer.parseInt(args[0]);
 		}
