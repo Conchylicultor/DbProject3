@@ -26,6 +26,7 @@ public class OMVCC {
 
 
 	public static class Pair<A, B> {
+		// Taken from stackoverflow
 		private A first;
 		private B second;
 
@@ -99,11 +100,13 @@ public class OMVCC {
 		public long startTimestamp;
 		public long transactionId;
 		public boolean isReadOnly;
+		public boolean hasModquery = false;
 		
 		//public List<Pair<Integer, Integer> > modifications;
 		//public List< Integer > listValuesRead;
 		
 		public HashMap<Integer, Value> valuesModified = new HashMap<>();
+		public LinkedList<Integer> keysRead = new LinkedList<>();
 
 		public Transaction() {
 			isReadOnly = true;
@@ -206,6 +209,8 @@ public class OMVCC {
 	public static int read(long xact, int key) throws Exception {
 		Transaction currentTrans = checkTransactionExist(xact);
 		
+		currentTrans.keysRead.add(key); // To check when validating there is no conflict
+		
 		// Check the key exist !! (in the committed version)
 		// Get the last written version of the current transaction (or the past version)
 		return currentTrans.read(key);
@@ -223,7 +228,7 @@ public class OMVCC {
 		
 		List<Integer> l = new ArrayList<Integer>();
 		
-		System.out.println("Get all dividers");
+		//System.out.println("Get all dividers");
 		HashMap<Integer, Value> mergedMap = new HashMap();
 		mergedMap.putAll(values);
 		mergedMap.putAll(currentTrans.valuesModified); // Will replace all previous values modified
@@ -232,10 +237,12 @@ public class OMVCC {
 			int value = iter.getValue().getLast();
 			if(value % k == 0)
 			{
-				System.out.println("Add " + iter.getKey() + " : " + value);
+				//System.out.println("Add " + iter.getKey() + " : " + value);
 				l.add(value);
 			}
 		}
+		
+		currentTrans.hasModquery = true;
 
 		return l;
 	}
@@ -294,7 +301,7 @@ public class OMVCC {
 
 	public static void commit(long xact)   throws Exception {
 		Transaction currentTrans = checkTransactionExist(xact);
-		boolean isValid = false; // FIX THIS
+		boolean isValid = true; // FIX THIS
 		/* TODO */
 		
 		// Validation phase
@@ -303,12 +310,38 @@ public class OMVCC {
 		} else {
 			// Validation more in depth
 			
-			// TODO: Check correctness
+			// Check correctness for the modquery operation
+			if (currentTrans.hasModquery) {
+				for (Map.Entry<Integer, Value> entry : values.entrySet()) { // For each key
+					for (Pair<Long, Integer> iter : entry.getValue().modifHist) { // We get the history
+						if (iter.first > currentTrans.startTimestamp) { // The key has been modified during the current transaction lifetime
+							//System.out.println("Conflict with a recent written value");
+							isValid = false;
+						}
+					}
+				}
+			}
+			// Check correctness for read operations
+			for (Integer key : currentTrans.keysRead) { // For each key we read 
+				for (Pair<Long, Integer> iter : values.get(key).modifHist) { // We check the key history
+					if (iter.first > currentTrans.startTimestamp) { // The key has been modified during the current transaction lifetime
+						//System.out.println("Conflict with a recent written value");
+						isValid = false;
+					}
+				}
+			}
 			
-			System.out.println("Commiting...");
+			//isValid = true;
+		}
+		
+		
+		if(isValid) {
+
+			
+			//System.out.println("Commiting...");
 			// If everything is ok, then we commit
-			for (Map.Entry<Integer, Value> entry : currentTrans.valuesModified.entrySet()) {
-				System.out.println("Update value " + entry.getKey());
+			for (Map.Entry<Integer, Value> entry : currentTrans.valuesModified.entrySet()) { // Is empty for read-only transactions
+				//System.out.println("Update value " + entry.getKey());
 				// If the key is new, we create a new value
 				if (!values.containsKey(entry.getKey())) {
 					values.put(entry.getKey(), new Value());
@@ -319,21 +352,22 @@ public class OMVCC {
 						startAndCommitTimestampGen, // We update at the next timestamp
 						entry.getValue().getLast() // The last value we have written
 					);
-				System.out.println("New value: " + values.get(entry.getKey()).getLast());
+				//System.out.println("New value: " + values.get(entry.getKey()).getLast());
 			}
 			
-			isValid = true;
-		}
-		
-		
-		if(isValid) {
 			listTransaction.remove(currentTrans); // The transaction is closed!!
 			++startAndCommitTimestampGen; //SHOULD BE USED
+		}
+		else {
+			cancelAndThrow(currentTrans, "Error: validation error");
 		}
 	}
 
 	public static void rollback(long xact) throws Exception {
-		checkTransactionExist(xact);
-		/* TODO */
+		Transaction currentTrans = checkTransactionExist(xact);
+		
+		// TODO: Clear buffer ?? < Should be automatically done by the garbage collector
+		
+		listTransaction.remove(currentTrans);
 	}
 }
