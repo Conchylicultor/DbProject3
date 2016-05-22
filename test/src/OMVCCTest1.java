@@ -24,13 +24,13 @@ public class OMVCCTest1 {
 			OMVCC.commit(p0);
 			long p1 = OMVCC.begin();
 			long p2 = OMVCC.begin();
-			//OMVCC.modquery(p1, 2);
-			OMVCC.read(p2, 10);
+			OMVCC.modquery(p1, 2);
+			//OMVCC.read(p1, 10);
 			OMVCC.write(p1, 1, 6);
 			OMVCC.write(p1, 2, 3);
-			OMVCC.write(p1, 3, 4);
+			//OMVCC.write(p1, 3, 4);
 			//OMVCC.modquery(p1, 2);
-			OMVCC.write(p2, 10, 40);
+			OMVCC.write(p2, 3, 40);
 			OMVCC.commit(p2);
 			OMVCC.commit(p1);
 			

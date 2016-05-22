@@ -100,13 +100,13 @@ public class OMVCC {
 		public long startTimestamp;
 		public long transactionId;
 		public boolean isReadOnly;
-		public boolean hasModquery = false;
 		
 		//public List<Pair<Integer, Integer> > modifications;
 		//public List< Integer > listValuesRead;
 		
 		public HashMap<Integer, Value> valuesModified = new HashMap<>();
 		public LinkedList<Integer> keysRead = new LinkedList<>();
+		public LinkedList<Integer> modqueryRead = new LinkedList<>();
 
 		public Transaction() {
 			isReadOnly = true;
@@ -242,7 +242,7 @@ public class OMVCC {
 			}
 		}
 		
-		currentTrans.hasModquery = true;
+		currentTrans.modqueryRead.add(k);
 
 		return l;
 	}
@@ -311,13 +311,22 @@ public class OMVCC {
 			// Validation more in depth
 			
 			// Check correctness for the modquery operation
-			if (currentTrans.hasModquery) {
+			for (Integer k : currentTrans.modqueryRead) { // For each query we made
 				for (Map.Entry<Integer, Value> entry : values.entrySet()) { // For each key
+					int previousValue = -1;
 					for (Pair<Long, Integer> iter : entry.getValue().modifHist) { // We get the history
 						if (iter.first > currentTrans.startTimestamp) { // The key has been modified during the current transaction lifetime
-							//System.out.println("Conflict with a recent written value");
-							isValid = false;
+							if (previousValue != -1 && previousValue % k == 0) { // There exist a previous value and was matching the predicate
+								//System.out.println("Conflict with a recent written value");
+								isValid = false;
+							}
+							
+							if (iter.second % k == 0) { // The write would have modify the our query result
+								//System.out.println("Conflict with a recent written value");
+								isValid = false;
+							}
 						}
+						previousValue = iter.second;
 					}
 				}
 			}
